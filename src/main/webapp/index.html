@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>首页 - 图书馆管理系统</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="page" id="app" v-cloak>
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">图</div>
+      <div>
+        <h1>图书馆管理系统</h1>
+        <p>按角色展示功能卡</p>
+      </div>
+    </div>
+    <div class="user-chip" v-if="user">
+      <div>
+        <b>{{ user.name }}</b>
+        <span>角色：{{ user.role }}</span>
+      </div>
+      <button class="btn ghost small" @click="logout">退出</button>
+    </div>
+  </div>
+
+  <div class="grid-cards">
+    <div class="card func-card" v-for="c in cards" :key="c.key" @click="open(c.key)">
+      <div class="icon">{{ c.icon }}</div>
+      <h3>{{ c.title }}</h3>
+      <p>{{ c.desc }}</p>
+    </div>
+  </div>
+
+  <!-- 用户查询 -->
+  <div class="card panel" v-if="view==='userQuery'">
+    <h2>用户信息查询</h2>
+    <div class="toolbar">
+      <input v-model="userKw" placeholder="关键字：姓名 / 手机 / 角色 / 专业" @keyup.enter="searchUsers">
+      <button class="btn" @click="searchUsers">查询</button>
+    </div>
+    <p class="empty" v-if="!userSearched">默认不显示用户数据，请输入关键字后查询</p>
+    <table v-else>
+      <thead><tr><th>姓名</th><th>角色</th><th>手机号</th><th>专业</th><th>创建时间</th><th></th></tr></thead>
+      <tbody>
+        <tr v-for="u in users" :key="u.id">
+          <td>{{ u.name }}</td>
+          <td>{{ u.role }}</td>
+          <td>{{ u.phone }}</td>
+          <td>{{ u.major }}</td>
+          <td>{{ fmt(u.createTime) }}</td>
+          <td><button class="btn small" @click="showUser(u)">查看</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 添加图书 -->
+  <div class="card panel" v-if="view==='addBook'">
+    <h2>添加书籍</h2>
+    <p class="hint">添加后新书会出现在列表第一行，并按库存自动生成副本。可反复添加。</p>
+    <div class="form-row"><label>书名</label><input v-model="bookForm.title"></div>
+    <div class="form-row"><label>作者</label><input v-model="bookForm.author"></div>
+    <div class="form-row"><label>类型</label>
+      <select v-model="bookForm.type">
+        <option>计算机</option><option>文学</option><option>历史</option>
+        <option>经济</option><option>哲学</option><option>艺术</option>
+        <option>教育</option><option>编程语言</option><option>古典文学</option>
+      </select>
+    </div>
+    <div class="form-row"><label>出版社</label><input v-model="bookForm.publisher"></div>
+    <div class="form-row"><label>还书期限（天）</label><input v-model="bookForm.days"></div>
+    <div class="form-row"><label>价格</label><input v-model="bookForm.price"></div>
+    <div class="form-row"><label>库存（自动生成副本）</label><input v-model="bookForm.stock"></div>
+    <div class="form-row"><label>简介</label><textarea v-model="bookForm.introduction" rows="3"></textarea></div>
+    <div class="btn-row">
+      <button class="btn" @click="addBook">添加</button>
+      <button class="btn ghost" @click="view=''">退出该功能</button>
+    </div>
+    <div class="msg" :class="msgOk?'ok':'err'">{{ msg }}</div>
+    <h3>当前图书列表</h3>
+    <table>
+      <thead><tr><th>书名</th><th>作者</th><th>类型</th><th>库存</th><th>状态</th><th>创建时间</th></tr></thead>
+      <tbody>
+        <tr v-for="b in books" :key="b.id">
+          <td>{{ b.title }}</td><td>{{ b.author }}</td><td>{{ b.type }}</td>
+          <td>{{ b.stock }}</td><td>{{ b.status }}</td><td>{{ fmt(b.createTime) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 查询 / 查看 / 编辑 / 废弃 / 副本 -->
+  <div class="card panel" v-if="['listBook','editBook','discardBook','editCopy'].indexOf(view)>=0">
+    <h2>{{ viewTitle }}</h2>
+    <div class="toolbar">
+      <input v-model="bookKw" placeholder="关键字为空则查全部" @keyup.enter="searchBooks">
+      <button class="btn" @click="searchBooks">查询</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>书名</th><th>作者</th><th>类型</th><th>出版社</th>
+          <th>期限</th><th>价格</th><th>库存</th><th>状态</th><th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="b in books" :key="b.id">
+          <td>{{ b.title }}</td>
+          <td>{{ b.author }}</td>
+          <td>{{ b.type }}</td>
+          <td>{{ b.publisher }}</td>
+          <td>{{ b.days }}</td>
+          <td>{{ b.price }}</td>
+          <td>{{ b.stock }}</td>
+          <td><span class="tag" :class="b.status==='已废弃'?'red':'green'">{{ b.status }}</span></td>
+          <td>
+            <button class="btn small" v-if="view==='editBook'" @click="openEdit(b)">编辑</button>
+            <button class="btn small danger" v-if="view==='discardBook'" @click="discard(b)">废弃</button>
+            <button class="btn small" v-if="view==='editCopy'" @click="openCopies(b)">副本</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 借书 -->
+  <div class="card panel" v-if="view==='borrow'">
+    <h2>借书</h2>
+    <p class="hint">选择图书 ID 借阅。可多次借书，点“退出该功能”结束。</p>
+    <div class="toolbar">
+      <input v-model="borrowBookId" placeholder="输入图书 ID">
+      <button class="btn" @click="borrow">借阅</button>
+      <button class="btn ghost" @click="view=''">退出该功能</button>
+    </div>
+    <div class="msg" :class="msgOk?'ok':'err'">{{ msg }}</div>
+    <h3>可借图书</h3>
+    <table>
+      <thead><tr><th>图书ID</th><th>书名</th><th>作者</th><th>库存</th><th></th></tr></thead>
+      <tbody>
+        <tr v-for="b in available" :key="b.id">
+          <td style="font-size:12px">{{ b.id }}</td>
+          <td>{{ b.title }}</td><td>{{ b.author }}</td><td>{{ b.stock }}</td>
+          <td><button class="btn small" @click="borrowBookId=b.id; borrow()">借这本书</button></td>
+        </tr>
+      </tbody>
+    </table>
+    <h3>我的借阅记录</h3>
+    <table>
+      <thead><tr><th>书名</th><th>副本ID</th><th>借出</th><th>应还</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr v-for="l in myLoans" :key="l.id">
+          <td>{{ l.bookTitle }}</td>
+          <td style="font-size:12px">{{ l.bookCopyId }}</td>
+          <td>{{ fmt(l.borrowDate) }}</td>
+          <td>{{ fmt(l.dueDate) }}</td>
+          <td>{{ l.status }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 还书 -->
+  <div class="card panel" v-if="view==='return'">
+    <h2>还书</h2>
+    <p class="hint">通过图书副本 ID 还书。还书后未还记录会消失。可多次还书。</p>
+    <div class="toolbar">
+      <input v-model="returnCopyId" placeholder="输入副本 ID">
+      <button class="btn" @click="returnBook">还书</button>
+      <button class="btn ghost" @click="view=''">退出该功能</button>
+    </div>
+    <div class="msg" :class="msgOk?'ok':'err'">{{ msg }}</div>
+    <h3>我的未还记录</h3>
+    <table>
+      <thead><tr><th>书名</th><th>副本ID</th><th>借出</th><th>应还</th><th>状态</th><th></th></tr></thead>
+      <tbody>
+        <tr v-for="l in unreturned" :key="l.id">
+          <td>{{ l.bookTitle }}</td>
+          <td style="font-size:12px">{{ l.bookCopyId }}</td>
+          <td>{{ fmt(l.borrowDate) }}</td>
+          <td>{{ fmt(l.dueDate) }}</td>
+          <td>{{ l.status }}</td>
+          <td><button class="btn small" @click="returnCopyId=l.bookCopyId; returnBook()">归还</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 个人借阅 -->
+  <div class="card panel" v-if="view==='myLoan'">
+    <h2>个人借阅查询</h2>
+    <div class="toolbar">
+      <button class="btn" @click="loadMine('all')">全部借阅</button>
+      <button class="btn ghost" @click="loadMine('open')">未还借阅</button>
+      <input type="date" v-model="rangeStart">
+      <input type="date" v-model="rangeEnd">
+      <button class="btn ghost" @click="loadMine('range')">日期范围</button>
+    </div>
+    <table>
+      <thead><tr><th>书名</th><th>副本ID</th><th>借出</th><th>应还</th><th>归还</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr v-for="l in myLoans" :key="l.id">
+          <td>{{ l.bookTitle }}</td>
+          <td style="font-size:12px">{{ l.bookCopyId }}</td>
+          <td>{{ fmt(l.borrowDate) }}</td>
+          <td>{{ fmt(l.dueDate) }}</td>
+          <td>{{ fmt(l.returnDate) }}</td>
+          <td>{{ l.status }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 借阅记录查询 -->
+  <div class="card panel" v-if="view==='loanQuery'">
+    <h2>借阅记录查询</h2>
+    <div class="toolbar">
+      <select v-model="loanMode">
+        <option value="kw">关键字查询</option>
+        <option value="overdue">超期借阅</option>
+        <option value="range">日期范围</option>
+      </select>
+      <input v-if="loanMode!=='range'" v-model="loanKw" placeholder="用户名 / 书名">
+      <input v-if="loanMode==='range'" type="date" v-model="rangeStart">
+      <input v-if="loanMode==='range'" type="date" v-model="rangeEnd">
+      <button class="btn" @click="searchLoans">查询</button>
+    </div>
+    <table>
+      <thead><tr><th>用户</th><th>书名</th><th>副本</th><th>借出</th><th>应还</th><th>归还</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr v-for="l in loans" :key="l.id">
+          <td>{{ l.userName }}</td>
+          <td>{{ l.bookTitle }}</td>
+          <td style="font-size:12px">{{ l.bookCopyId }}</td>
+          <td>{{ fmt(l.borrowDate) }}</td>
+          <td>{{ fmt(l.dueDate) }}</td>
+          <td>{{ fmt(l.returnDate) }}</td>
+          <td>{{ l.status }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 统计 -->
+  <div class="card panel" v-if="view==='loanStat'">
+    <h2>借阅数据统计</h2>
+    <h3>按图书类型</h3>
+    <div class="stat-list">
+      <div class="stat-item" v-for="s in typeStat" :key="s.name">
+        <div class="n">{{ s.count }} 次</div>
+        <div class="t">{{ s.name }}</div>
+      </div>
+    </div>
+    <h3>按用户专业</h3>
+    <div class="stat-list">
+      <div class="stat-item" v-for="s in majorStat" :key="s.name">
+        <div class="n">{{ s.count }} 次</div>
+        <div class="t">{{ s.name }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 推荐 -->
+  <div class="card panel" v-if="view==='recommend'">
+    <h2>推荐图书</h2>
+    <div class="form-row"><label>书名</label><input v-model="recForm.bookName"></div>
+    <div class="form-row"><label>作者</label><input v-model="recForm.author"></div>
+    <div class="form-row"><label>出版社</label><input v-model="recForm.publisher"></div>
+    <div class="form-row"><label>价格</label><input v-model="recForm.price"></div>
+    <button class="btn" @click="submitRec">提交推荐</button>
+    <div class="msg" :class="msgOk?'ok':'err'">{{ msg }}</div>
+    <h3>我的推荐</h3>
+    <table>
+      <thead><tr><th>书名</th><th>作者</th><th>状态</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr v-for="r in myRecs" :key="r.id">
+          <td>{{ r.bookName }}</td><td>{{ r.author }}</td><td>{{ r.status }}</td><td>{{ r.reason }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 审阅 -->
+  <div class="card panel" v-if="view==='reviewRecommend'">
+    <h2>审阅推荐图书</h2>
+    <table>
+      <thead><tr><th>推荐人</th><th>书名</th><th>作者</th><th>出版社</th><th>价格</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr v-for="r in recs" :key="r.id">
+          <td>{{ r.userName }}</td>
+          <td>{{ r.bookName }}</td>
+          <td>{{ r.author }}</td>
+          <td>{{ r.publisher }}</td>
+          <td>{{ r.price }}</td>
+          <td>{{ r.status }}</td>
+          <td v-if="r.status==='待审'">
+            <button class="btn small ok" @click="approve(r)">加入图书列表</button>
+            <button class="btn small danger" @click="reject(r)">驳回</button>
+          </td>
+          <td v-else>{{ r.reason }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 弹窗 -->
+  <div class="modal-mask" v-if="modal" @click.self="modal=null">
+    <div class="card modal">
+      <h2>{{ modal.title }}</h2>
+      <div v-if="modal.type==='user'" class="kv">
+        <b>姓名</b><div>{{ modal.data.name }}</div>
+        <b>角色</b><div>{{ modal.data.role }}</div>
+        <b>手机</b><div>{{ modal.data.phone }}</div>
+        <b>专业</b><div>{{ modal.data.major }}</div>
+        <b>学院</b><div>{{ modal.data.college || '-' }}</div>
+        <b>年级</b><div>{{ modal.data.grade || '-' }}</div>
+        <b>职称</b><div>{{ modal.data.title || '-' }}</div>
+        <b>职务</b><div>{{ modal.data.duty || '-' }}</div>
+        <b>区域</b><div>{{ modal.data.area || '-' }}</div>
+        <b>权限等级</b><div>{{ modal.data.permissionLevel || '-' }}</div>
+        <b>入职时间</b><div>{{ modal.data.entryTime || '-' }}</div>
+        <b>创建时间</b><div>{{ fmt(modal.data.createTime) }}</div>
+        <b>最近登录</b><div>{{ fmt(modal.data.loginTime) }}</div>
+      </div>
+      <div v-if="modal.type==='edit'">
+        <div class="form-row"><label>书名</label><input v-model="editForm.title"></div>
+        <div class="form-row"><label>作者</label><input v-model="editForm.author"></div>
+        <div class="form-row"><label>类型</label><input v-model="editForm.type"></div>
+        <div class="form-row"><label>出版社</label><input v-model="editForm.publisher"></div>
+        <div class="form-row"><label>还书期限</label><input v-model="editForm.days"></div>
+        <div class="form-row"><label>价格</label><input v-model="editForm.price"></div>
+        <p class="hint">库存、副本、状态不可在此修改</p>
+        <button class="btn" @click="saveEdit">保存</button>
+      </div>
+      <div v-if="modal.type==='copy'">
+        <p>书名：{{ modal.book.title }}　库存：{{ modal.book.stock }}</p>
+        <button class="btn small" @click="addCopy">新增副本</button>
+        <table>
+          <thead><tr><th>副本ID</th><th>是否借出</th><th></th></tr></thead>
+          <tbody>
+            <tr v-for="c in copies" :key="c.id">
+              <td style="font-size:12px">{{ c.id }}</td>
+              <td>{{ c.isBorrowed ? '已借出' : '未借阅' }}</td>
+              <td><button class="btn small danger" @click="delCopy(c)" :disabled="c.isBorrowed">删除</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:16px"><button class="btn ghost" @click="modal=null">关闭</button></div>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+new Vue({
+  el: '#app',
+  data: {
+    user: null,
+    cards: [],
+    view: '',
+    viewTitle: '',
+    msg: '',
+    msgOk: true,
+    users: [],
+    userKw: '',
+    userSearched: false,
+    books: [],
+    bookKw: '',
+    bookForm: { title:'', author:'', type:'计算机', publisher:'', days:14, price:'', stock:1, introduction:'' },
+    editForm: {},
+    available: [],
+    myLoans: [],
+    unreturned: [],
+    borrowBookId: '',
+    returnCopyId: '',
+    loans: [],
+    loanMode: 'kw',
+    loanKw: '',
+    rangeStart: '',
+    rangeEnd: '',
+    typeStat: [],
+    majorStat: [],
+    recForm: { bookName:'', author:'', publisher:'', price:'' },
+    recs: [],
+    myRecs: [],
+    copies: [],
+    modal: null
+  },
+  created: function () {
+    var self = this;
+    App.get('api/user/me').then(function (u) {
+      self.user = u;
+      self.cards = App.roleCards(u.role);
+    }).catch(function () {
+      location.href = 'login.html';
+    });
+  },
+  methods: {
+    fmt: App.fmt,
+    open: function (key) {
+      this.view = key;
+      this.msg = '';
+      var titles = {
+        listBook: '查看所有书籍', editBook: '编辑图书',
+        discardBook: '废弃图书', editCopy: '图书副本编辑'
+      };
+      this.viewTitle = titles[key] || '';
+      if (key === 'addBook' || key === 'listBook' || key === 'editBook' || key === 'discardBook' || key === 'editCopy') {
+        this.searchBooks();
+      }
+      if (key === 'borrow') { this.loadBorrow(); }
+      if (key === 'return') { this.loadUnreturned(); }
+      if (key === 'myLoan') { this.loadMine('all'); }
+      if (key === 'loanStat') { this.loadStat(); }
+      if (key === 'reviewRecommend') { this.loadRecs(); }
+      if (key === 'recommend') { this.loadMyRecs(); }
+      if (key === 'userQuery') { this.userSearched = false; this.users = []; }
+    },
+    logout: function () {
+      App.post('api/user/logout', {}).then(function () {
+        location.href = 'login.html';
+      });
+    },
+    searchUsers: function () {
+      var self = this;
+      App.get('api/user/search', { keyword: this.userKw }).then(function (list) {
+        self.users = list || [];
+        self.userSearched = true;
+      }).catch(function (e) { alert(e.message); });
+    },
+    showUser: function (u) {
+      var self = this;
+      App.get('api/user/detail', { id: u.id }).then(function (d) {
+        self.modal = { type: 'user', title: '用户详情', data: d };
+      });
+    },
+    searchBooks: function () {
+      var self = this;
+      App.get('api/book/search', { keyword: this.bookKw }).then(function (list) {
+        self.books = list || [];
+      });
+    },
+    addBook: function () {
+      var self = this;
+      App.post('api/book/add', this.bookForm).then(function () {
+        self.msgOk = true;
+        self.msg = '添加成功';
+        self.searchBooks();
+      }).catch(function (e) { self.msgOk = false; self.msg = e.message; });
+    },
+    openEdit: function (b) {
+      this.editForm = {
+        id: b.id, title: b.title, author: b.author, type: b.type,
+        publisher: b.publisher, days: b.days, price: b.price
+      };
+      this.modal = { type: 'edit', title: '编辑图书' };
+    },
+    saveEdit: function () {
+      var self = this;
+      App.post('api/book/edit', this.editForm).then(function () {
+        self.modal = null;
+        self.searchBooks();
+      }).catch(function (e) { alert(e.message); });
+    },
+    discard: function (b) {
+      var self = this;
+      if (!confirm('确认废弃《' + b.title + '》？')) return;
+      App.post('api/book/discard', { id: b.id }).then(function () {
+        self.searchBooks();
+      }).catch(function (e) { alert(e.message); });
+    },
+    openCopies: function (b) {
+      var self = this;
+      App.get('api/book/detail', { id: b.id }).then(function (d) {
+        self.copies = d.bookCopies || [];
+        self.modal = { type: 'copy', title: '副本编辑', book: d };
+      });
+    },
+    addCopy: function () {
+      var self = this;
+      App.post('api/book/copy/add', { bookId: this.modal.book.id }).then(function () {
+        self.openCopies(self.modal.book);
+        self.searchBooks();
+      }).catch(function (e) { alert(e.message); });
+    },
+    delCopy: function (c) {
+      var self = this;
+      App.post('api/book/copy/delete', { copyId: c.id }).then(function () {
+        self.openCopies(self.modal.book);
+        self.searchBooks();
+      }).catch(function (e) { alert(e.message); });
+    },
+    loadBorrow: function () {
+      var self = this;
+      App.get('api/book/available').then(function (list) { self.available = list || []; });
+      App.get('api/loan/mine').then(function (list) { self.myLoans = list || []; });
+    },
+    borrow: function () {
+      var self = this;
+      App.post('api/loan/borrow', { bookId: this.borrowBookId }).then(function () {
+        self.msgOk = true; self.msg = '借阅成功';
+        self.loadBorrow();
+      }).catch(function (e) { self.msgOk = false; self.msg = e.message; });
+    },
+    loadUnreturned: function () {
+      var self = this;
+      App.get('api/loan/mine/unreturned').then(function (list) { self.unreturned = list || []; });
+    },
+    returnBook: function () {
+      var self = this;
+      App.post('api/loan/return', { bookCopyId: this.returnCopyId }).then(function () {
+        self.msgOk = true; self.msg = '还书成功';
+        self.loadUnreturned();
+      }).catch(function (e) { self.msgOk = false; self.msg = e.message; });
+    },
+    loadMine: function (mode) {
+      var self = this;
+      var p;
+      if (mode === 'open') p = App.get('api/loan/mine/unreturned');
+      else if (mode === 'range') p = App.get('api/loan/mine/range', { start: this.rangeStart, end: this.rangeEnd });
+      else p = App.get('api/loan/mine');
+      p.then(function (list) { self.myLoans = list || []; }).catch(function (e) { alert(e.message); });
+    },
+    searchLoans: function () {
+      var self = this;
+      var p;
+      if (this.loanMode === 'overdue') p = App.get('api/loan/overdue', { keyword: this.loanKw });
+      else if (this.loanMode === 'range') p = App.get('api/loan/range', { start: this.rangeStart, end: this.rangeEnd });
+      else p = App.get('api/loan/search', { keyword: this.loanKw });
+      p.then(function (list) { self.loans = list || []; }).catch(function (e) { alert(e.message); });
+    },
+    loadStat: function () {
+      var self = this;
+      App.get('api/loan/stat/type').then(function (list) { self.typeStat = list || []; });
+      App.get('api/loan/stat/major').then(function (list) { self.majorStat = list || []; });
+    },
+    submitRec: function () {
+      var self = this;
+      App.post('api/recommend/submit', this.recForm).then(function (r) {
+        self.msgOk = true;
+        self.msg = r.message || '已提交';
+        self.loadMyRecs();
+      }).catch(function (e) { self.msgOk = false; self.msg = e.message; });
+    },
+    loadMyRecs: function () {
+      var self = this;
+      App.get('api/recommend/mine').then(function (list) { self.myRecs = list || []; });
+    },
+    loadRecs: function () {
+      var self = this;
+      App.get('api/recommend/list').then(function (list) { self.recs = list || []; });
+    },
+    approve: function (r) {
+      var type = prompt('加入馆藏：请输入类型（如 文学）', '文学');
+      if (type === null) return;
+      var stock = prompt('库存（将自动生成副本）', '1');
+      var self = this;
+      App.post('api/recommend/approve', { id: r.id, type: type, stock: stock, days: 14 }).then(function () {
+        self.loadRecs();
+      }).catch(function (e) { alert(e.message); });
+    },
+    reject: function (r) {
+      var reason = prompt('请填写驳回理由');
+      if (!reason) return;
+      var self = this;
+      App.post('api/recommend/reject', { id: r.id, reason: reason }).then(function () {
+        self.loadRecs();
+      }).catch(function (e) { alert(e.message); });
+    }
+  }
+});
+</script>
+</body>
+</html>
